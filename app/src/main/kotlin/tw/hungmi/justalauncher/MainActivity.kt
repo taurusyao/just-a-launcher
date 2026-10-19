@@ -124,14 +124,23 @@ class MainActivity : Activity() {
     private fun load() {
         endMove() // 移動中裝了或移除 app：先存目前的順序再重排
         val pm = packageManager
-        val query = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
-        val apps = pm.queryIntentActivities(query, 0)
-            .filter { it.activityInfo.packageName != packageName }
-            .map { ri ->
+        // 兩種 launcher category 都查：電視 app 掛 LEANBACK_LAUNCHER，一般 app 只掛 LAUNCHER，
+        // 只查一種會漏掉另一半（例如 Android 5.1 電視上的手機版 app）。
+        // 先查 LEANBACK，同一個 package 只留第一條，所以有兩種的都優先走 LEANBACK。
+        val seen = HashSet<String>()
+        val apps = listOf(Intent.CATEGORY_LEANBACK_LAUNCHER, Intent.CATEGORY_LAUNCHER)
+            .flatMap { category ->
+                val query = Intent(Intent.ACTION_MAIN).addCategory(category)
+                pm.queryIntentActivities(query, 0).map { it to category }
+            }
+            .filter { (ri, _) -> ri.activityInfo.packageName != packageName }
+            .filter { (ri, _) -> seen.add(ri.activityInfo.packageName) }
+            .map { (ri, category) ->
                 val component = ComponentName(ri.activityInfo.packageName, ri.activityInfo.name)
                 val banner = ri.activityInfo.loadBanner(pm)
+                // category 用實際查到的那一個：寫死 LEANBACK 對只掛 LAUNCHER 的 app 會打不開
                 val launch = Intent(Intent.ACTION_MAIN)
-                    .addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
+                    .addCategory(category)
                     .setComponent(component)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
                 Tile(component.flattenToShortString(), ri.loadLabel(pm).toString(), banner ?: ri.loadIcon(pm), banner != null, launch)
